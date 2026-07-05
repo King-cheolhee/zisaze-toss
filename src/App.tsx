@@ -1,16 +1,6 @@
 import "./App.css";
-{
-  {
-    SAMPLE_IMPORTS;
-  }
-}
 
 function App() {
-  {
-    {
-      PAGE_STATE_AND_ROUTES;
-    }
-  }
   return (
     <div className="app">
       <header className="app-header">
@@ -35,7 +25,6 @@ function App() {
         >
           개발자 커뮤니티
         </a>
-        {{ SAMPLE_BUTTONS }}
       </div>
 
       <div className="app-logo-wrap">
