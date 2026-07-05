@@ -29,3 +29,8 @@ coverage/
 Thumbs.db
 .idea/
 *.swp
+
+# 훅 작업파일 (커밋 금지)
+.claude/.review-*
+.claude/.recodex-*
+.recodex-count
