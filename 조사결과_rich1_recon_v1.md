@@ -115,5 +115,6 @@ program-fields CARD 컬럼: `id,title,organization,category,application_start,ap
 - `zisaze-symbol-brand.png` 128×128(심볼 단독) · `icon-512.png` 512×512 · `icon-192/180.png` · `favicon.png` 32×32
 - `zisaze-lockup-dark.png`/`-light.png` 각 1200×560(로고+텍스트 락업)
 - `og-image.png` 1200×630
-- 색: CTA `#2563EB`, 네이비 `#1E2E4A`. 한글명 "지사제", 로마자 "Zisaze", 태그라인 "지원사업제도를 모두 모아"
-- ⚠️ 토스 로고 규격 600×600(투명불가·각진정사각)은 심볼 128×128이 작음 → icon-512(512×512)를 소스로 600×600 무투명 정사각으로 리포맷 권장
+- 색: **실제 로고/아이콘 블루 = `#3182F6`**(icon-512.png 실측, 토스 블루 계열). CSS accent-600은 `#2563EB`(globals.css)로 미세하게 다름 → **미니앱 granite.config primaryColor는 아이콘과 일치하는 `#3182F6` 권장**(토스 앱 내 자기 아이콘과 일관, 토스 네이티브 느낌). 네이비 `#1E2E4A`. 한글명 "지사제", 로마자 "Zisaze", 태그라인 "지원사업제도를 모두 모아"
+- ⚠️ 토스 로고 규격 600×600(투명불가·각진정사각)은 심볼 128×128이 작음 → icon-512(512×512)를 소스로 리포맷.
+- **P0-4 산출(완료):** `brand/console/logo_600x600.png`, `thumbnail_1000x1000.png`, `thumbnail_1932x828.png`(모두 #3182F6 배경+흰 심볼/워드마크). 스크린샷 636×1048은 개발 후 캡처. 생성 스크립트는 scratchpad `make_brand_assets.py`(재현 가능).
