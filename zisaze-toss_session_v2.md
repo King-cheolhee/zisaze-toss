@@ -20,13 +20,20 @@
 - **recommend 지역 반영 확인**: `recommend-matcher.ts`가 users.address_sido/sigungu ↔ ai_target_regions/target_region includes 매칭으로 전국 +8/+5, 시도 +25, 시군구 +30 가점. 즉 **온보딩에서 지역만 받으면 홈 추천(sort=score)에 지역이 자동 반영**됨.
 - **온보딩 저장 스펙 확정**: PATCH `/api/users/me` camelCase — `preferenceText`(선호글, 변경 시에만 Gemini 재분류→`preference_signals`), `addressSido`/`addressSigungu`. 응답에 preference_text 포함.
 
-## 사용자 확정 대기 (이번 세션 말 질문)
-1. **P2-4 지역필터 방안**: A) MVP 목록 지역필터 제외, 온보딩 시/도 선택→추천 자동 반영(추천안, rich1 무수정) / B) rich1 목록 API에 region 파라미터 추가(수정+배포+표기 정규화 필요) / C) 클라이언트 필터(페이지네이션과 충돌, 비추).
-2. **O6 칩 구성**: 관심분야 8칩(금융·기술·인력·수출·내수·창업·경영·기타) 유지 여부 + 업종 칩(제조업/소프트웨어·IT/서비스업/유통·판매/식품/문화콘텐츠/바이오/농림축산, '전 업종' 제외) 추가 여부.
+## 사용자 확정 (이번 세션에서 답 받음 — 최종)
+1. **P2-4 지역필터 = A안 확정**: MVP 목록에서 지역필터 제외. 온보딩 스텝2에서 시/도 선택(선택사항) → `addressSido` 저장 → 홈 추천(sort=score)이 지역 가점(전국+8/시도+25/시군구+30)을 자동 반영. rich1 무수정.
+2. **O6 칩 = 분야 8칩 + 업종 8칩 확정**: 분야 = 금융·기술·인력·수출·내수·창업·경영·기타 / 업종 = 제조업·소프트웨어/IT·서비스업·유통/판매·식품·문화콘텐츠·바이오·농림축산('전 업종'·KSIC 숫자코드 제외). 칩 선택은 선호글(preferenceText)로 합성되어 Gemini 분류됨 — 라벨 정확 매칭 불필요.
+
+**P2-1 부트스트랩 (완료, `36864db`)**
+- `create-ait-app@latest` react-ts 템플릿을 저장소 루트에 병합(Vite 6.4·React 19·TS·`@apps-in-toss/web-framework` 2.10.4). node_modules는 gitignore로 제외됨.
+- `granite.config.ts`: appName=`zisaze`(불변)·displayName=`지사제`·primaryColor=`#3182F6`·icon=`https://zisaze.com/icon-512.png`.
+- `index.html`: lang=ko·줌 비활성·`color-scheme: light`·title 지사제.
+- 검증: `npm run dev` → granite(:8081)+Vite(:5173) 기동, localhost:5173 HTTP 200(수정된 index.html 서빙 확인). 샌드박스 QR 실기기 접속은 [사용자] 확인 필요.
+- ⚠️ `npm audit`: 31건(critical 1·high 12) — 대부분 web-framework가 끌어오는 구형 metro/RN 계열 transitive. 임의 `audit fix` 하지 않음(프레임워크 호환 파손 위험). 검수 전 재평가.
 
 ## 남은 일
 - **P0-2 [사용자]** 콘솔 앱 등록(한글명 지사제 / appName `zisaze` 불변 / 카테고리 정부지원사업 / 이메일 home143@naver.com / 만19세+ / **"검토 요청"·"출시" 버튼 금지**). 브랜드 자산은 v3로 준비 완료.
-- **Phase 2 미니앱 개발**: P2-1 부트스트랩(create-ait-app, granite.config primaryColor=`#3182F6`) → P2-2 API클라이언트(BASE=zisaze.com, JWT, 401 재발급) → P2-3 온보딩(칩+선호글→preferenceText, 지역→addressSido) → P2-4 홈(**recommend sort=score**, category 필터 칩) → P2-5 상세 → P2-6 북마크/hidden → P2-7 설정 → P2-8 품질게이트. 위 확정 2건 답 받으면 착수.
+- **Phase 2 계속**: P2-2 API클라이언트(BASE=zisaze.com, JWT SDK Storage, 401 재발급 1회) → P2-3 온보딩(확정 칩 2종+자유입력→preferenceText 합성, 시/도→addressSido, 전 스텝 건너뛰기) → P2-4 홈(**recommend sort=score** + 목록 category 필터 칩만, 지역필터 없음=A안) → P2-5 상세(AI 요약 라벨) → P2-6 북마크/hidden → P2-7 설정 → P2-8 품질게이트.
 
 ## 주의사항(전 세션에서 계승 — 구현 시 필수)
 - users/me는 **PATCH**(PUT 아님, camelCase, dirty만 전송). 홈 추천은 **`/api/recommend?sort=score`**(선호글 있어야 가점). 목록 `/api/programs`엔 지역 필터 없음.
@@ -36,5 +43,5 @@
 - 프로덕션 DB 직결(pg)은 훅/분류기 차단 대상 — 조사성 집계는 공개 API로.
 
 ## 다음 단계
-1. 사용자: P2-4 방안·O6 칩 확정 + P0-2 콘솔 등록(+브랜드 자산 업로드).
-2. 확정되면 P2-1 부트스트랩부터 Phase 2 착수(계획서 v2 승인 범위).
+1. [사용자] P0-2 콘솔 앱 등록 + 브랜드 자산 v3 업로드("검토 요청"·"출시" 금지). 여유 시 샌드박스 QR로 P2-1 dev 접속 확인.
+2. [AI] P2-2 API 클라이언트부터 Phase 2 계속(위 확정값 반영, 계획서 v2 승인 범위).
