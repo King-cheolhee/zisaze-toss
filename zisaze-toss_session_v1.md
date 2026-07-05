@@ -14,11 +14,13 @@
 - **P0-5** git 저장소 + GitHub 비공개 원격 `git@github.com:King-cheolhee/zisaze-toss.git` main push. `.claude` 훅파일 gitignore.
 - **P0-4** 브랜드 자산 초안 3종 `brand/console/`(logo_600x600, thumbnail_1000x1000, thumbnail_1932x828). 기존 로고(icon-512) 리포맷, 실제 브랜드블루 `#3182F6`. → **[사용자 확정 대기]**. 생성 스크립트: scratchpad `make_brand_assets.py`. 스크린샷은 개발 후 캡처.
 - **P0-3** rich1 `/privacy`·`/terms` 정적 페이지 + 미니앱 개인정보 추가고지. **dev·main 반영(`95d6a6c`) + 라이브 배포·검증 완료**(privacy/terms/home 전부 200, 미니앱 고지·기존 본문 노출 확인). 기존 웹 무영향(신규 라우트만).
+- **P0-4 v2** 브랜드 자산을 **실제 지사제 로고 파일**로 재작업(사용자 요청) — 흰 배경+실제 심볼(icon-512 색반전)+"지사제." 락업. 스크립트 `make_brand_assets_v2.py`. → **[사용자 확정 대기]**.
+- **P1-2 DDL 완료·검증** — `users.toss_user_key`(text, nullable) + UNIQUE 인덱스 라이브 반영. users 53→53행, NOT NULL 0건(기존 회원 무영향). 마이그레이션 기록 `2026-07-05_users_toss_user_key.sql`(rich1 main `329ab3d`). 실행 스크립트 scratchpad `ddl_toss_user_key.js`(SUPABASE_DB_URL pg 직결).
 
 ## 남은 일
 - **P0-2 [사용자]** 콘솔 앱 등록(체크리스트 전달됨): 한글명 지사제 / appName **zisaze**(불변) / 카테고리(정부지원사업) / 이메일 home143@naver.com / 연령 만19세+. **"검토 요청"·"출시" 버튼 금지.**
-- **P0-4 [사용자]** 브랜드 자산 확정.
-- **Phase 1(rich1 additive)**: P1-2 DDL(`ALTER TABLE users ADD COLUMN toss_user_key text UNIQUE` — **사용자 승인 필요**), P1-1 CORS, P1-3 `POST /api/toss/session`, P1-4 배포, P1-5 빈프로필 추천 검증.
+- **P0-4 [사용자]** 브랜드 자산 v2 확정.
+- **Phase 1 남은 것**: P1-1 CORS(미들웨어 — **배포 전 diff 검토 필수**), P1-3 `POST /api/toss/session`(신규 라우트, DDL 완료로 실행 가능), P1-4 배포(P0-3처럼 SCP+build+restart), P1-5 빈프로필 추천 검증(sort=score·PATCH 주의).
 
 ## 주의사항(핵심 정정 — 구현 시 필수)
 - **users/me는 PATCH**(PUT 아님). 홈 추천은 반드시 **`/api/recommend?sort=score`**(+선호글 있어야 가점). 목록 `/api/programs`엔 **지역 필터 없음** → P2-4 지역필터 재설계 필요.
