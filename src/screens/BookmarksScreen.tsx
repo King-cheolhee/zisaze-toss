@@ -31,10 +31,20 @@ export default function BookmarksScreen() {
   }, [sort]);
 
   function remove(id: string) {
-    // 낙관적 제거 후 서버 실패 시 복원 (recodex P1)
-    const before = items;
+    // 낙관적 제거 후 서버 실패 시 해당 항목만 원위치 복원
+    // (전체 배열 복원은 다른 연속 작업의 성공까지 되돌림 — recodex 2차)
+    const idx = items.findIndex((b) => b.id === id);
+    if (idx < 0) return;
+    const removed = items[idx];
     setItems((prev) => prev.filter((b) => b.id !== id));
-    void removeBookmark(id).catch(() => setItems(before));
+    void removeBookmark(id).catch(() =>
+      setItems((prev) => {
+        if (prev.some((b) => b.id === id)) return prev;
+        const next = [...prev];
+        next.splice(Math.min(idx, next.length), 0, removed);
+        return next;
+      }),
+    );
   }
 
   return (

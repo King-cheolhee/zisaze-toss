@@ -82,8 +82,9 @@ export async function bootstrapSession(): Promise<{ identityChanged: boolean }> 
   const key = await resolveAnonymousKey();
   const storedKey = await kvGet(ANON_KEY);
   const identityChanged = storedKey !== null && storedKey !== key;
-  if (identityChanged) await clearSession();
-  else if (storedKey === null) await kvSet(ANON_KEY, key); // 기존 설치도 다음 부트부터 감지 가능하게 기록
+  // 키 기록이 없는 토큰은 소유자를 확인할 수 없으므로 폐기하고 현재 키로 재발급한다
+  // (recodex 2차: 기존 토큰을 새 계정 소유로 잘못 확정하는 문제 차단. 같은 키면 서버가 같은 사용자 반환 — 멱등).
+  if (identityChanged || storedKey === null) await clearSession();
   await ((await loadToken()) ?? issueSession(key));
   return { identityChanged };
 }

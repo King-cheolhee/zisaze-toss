@@ -43,10 +43,20 @@ export default function HomeScreen() {
   }, []);
 
   function hideRecommendation(id: string) {
-    // 관심없음(P2-6 선택 기능): 낙관적 제거 후 서버 저장 실패 시 복원 (recodex P1)
-    const before = recoItems;
+    // 관심없음(P2-6 선택 기능): 낙관적 제거 후 서버 저장 실패 시 해당 항목만 원위치 복원
+    // (전체 배열 복원은 다른 연속 작업의 성공까지 되돌림 — recodex 2차)
+    const idx = recoItems.findIndex((r) => r.id === id);
+    if (idx < 0) return;
+    const removed = recoItems[idx];
     setRecoItems((prev) => prev.filter((r) => r.id !== id));
-    void addHidden(id).catch(() => setRecoItems(before));
+    void addHidden(id).catch(() =>
+      setRecoItems((prev) => {
+        if (prev.some((r) => r.id === id)) return prev;
+        const next = [...prev];
+        next.splice(Math.min(idx, next.length), 0, removed);
+        return next;
+      }),
+    );
   }
 
   // ── 전체 목록 ──
@@ -81,8 +91,13 @@ export default function HomeScreen() {
       } catch {
         if (seq === requestSeq.current) {
           setListError(true);
-          // 새 조건(검색·필터) 요청이 실패했는데 이전 조건의 목록이 새 제목 아래 남는 것 방지
-          if (!append) setPrograms([]);
+          // 새 조건(검색·필터) 요청이 실패했는데 이전 조건의 목록·페이지 상태가 남는 것 방지
+          // (page/totalPages를 남기면 '더 보기'가 새 조건의 2페이지부터 로드 — recodex 2차)
+          if (!append) {
+            setPrograms([]);
+            setPage(1);
+            setTotalPages(1);
+          }
         }
       } finally {
         if (seq === requestSeq.current) setListLoading(false);

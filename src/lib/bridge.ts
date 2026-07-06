@@ -59,24 +59,22 @@ export async function kvGet(key: string): Promise<string | null> {
 }
 
 export async function kvSet(key: string, value: string): Promise<void> {
-  const r = await tryNative(() => Storage.setItem(key, value));
-  if (!r.ok) {
-    try {
-      localStorage.setItem(key, value);
-    } catch {
-      // 저장 실패는 치명적이지 않음 — 토큰은 익명키로 재발급 가능
-    }
+  await tryNative(() => Storage.setItem(key, value));
+  // localStorage에 항상 미러링: 네이티브가 세션 중 완전히 죽어도 읽기 폴백이 최신값을 갖는다
+  // (recodex 2차: 개별 실패 시 두 저장소가 갈라지는 문제 — 잔여 창은 401 재발급·계정전환 감지로 자가 회복).
+  try {
+    localStorage.setItem(key, value);
+  } catch {
+    // 저장 실패는 치명적이지 않음 — 토큰은 익명키로 재발급 가능
   }
 }
 
 export async function kvRemove(key: string): Promise<void> {
-  const r = await tryNative(() => Storage.removeItem(key));
-  if (!r.ok) {
-    try {
-      localStorage.removeItem(key);
-    } catch {
-      // 무시
-    }
+  await tryNative(() => Storage.removeItem(key));
+  try {
+    localStorage.removeItem(key);
+  } catch {
+    // 무시
   }
 }
 
