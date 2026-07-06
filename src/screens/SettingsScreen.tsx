@@ -45,12 +45,12 @@ function toggle(list: string[], value: string): string[] {
   return list.includes(value) ? list.filter((v) => v !== value) : [...list, value];
 }
 
-// dirty 비교 기준 = 서버 원문을 파싱→재합성한 정규형(canonical).
-// 원문을 그대로(또는 앞 500자만 잘라) 비교하면 공백 차이·500자 초과 원문에서
-// 무변경 저장인데도 dirty로 오판해 정규화/절단본을 전송한다(Codex P1).
-function canonicalPreference(text: string | null | undefined): string {
-  const p = parsePreferenceText(text ?? "");
-  return composePreferenceText(p.fields, p.industries, p.free);
+// dirty 판정 = 절단 "전"의 폼 상태(칩·자유입력)가 로드 시점과 달라졌는지.
+// 합성문(500자 절단본)끼리 비교하면 ①공백 차이·500자 초과 원문의 무변경 저장을 dirty로 오판하거나
+// ②반대로 500자 경계 밖만 편집한 경우를 무변경으로 오판한다(Codex P1 재검증) —
+// 원시 폼 상태 비교는 두 오판이 모두 없다.
+function preferenceFormKey(fields: string[], industries: string[], free: string): string {
+  return JSON.stringify([fields, industries, free.trim()]);
 }
 
 // P2-7 설정: 선호·지역 수정(온보딩 칩 UI 재사용, 현재값 프리로드), 데이터 삭제(H17), 법적 고지 링크
@@ -61,8 +61,8 @@ export default function SettingsScreen() {
   const [freeText, setFreeText] = useState("");
   const [sido, setSido] = useState<string | null>(null);
   const [sigungu, setSigungu] = useState("");
-  const [loaded, setLoaded] = useState<{ preferenceText: string; sido: string | null; sigungu: string }>(
-    { preferenceText: "", sido: null, sigungu: "" },
+  const [loaded, setLoaded] = useState<{ preferenceKey: string; sido: string | null; sigungu: string }>(
+    { preferenceKey: preferenceFormKey([], [], ""), sido: null, sigungu: "" },
   );
 
   const [saving, setSaving] = useState(false);
@@ -98,7 +98,7 @@ export default function SettingsScreen() {
         setSido(me.address_sido);
         setSigungu(me.address_sigungu ?? "");
         setLoaded({
-          preferenceText: canonicalPreference(me.preference_text),
+          preferenceKey: preferenceFormKey(parsed.fields, parsed.industries, parsed.free),
           sido: me.address_sido,
           sigungu: me.address_sigungu ?? "",
         });
@@ -170,12 +170,13 @@ export default function SettingsScreen() {
   }
 
   async function save() {
-    const nextText = composePreferenceText(fields, industries, freeText);
     const patch: MePatch = {};
     // dirty 전송 규약: 실제 바뀐 필드만 보낸다 (서버도 preference_text 변경 여부를 재확인함).
-    // loaded.preferenceText는 canonical(파싱→재합성 정규형)이므로, 무변경 저장이면 nextText와
-    // 정확히 일치해 전송되지 않는다 — 공백 차이·500자 초과 원문의 절단 전송 방지(INT-6·Codex P1).
-    if (nextText !== loaded.preferenceText) patch.preferenceText = nextText;
+    // 판정은 절단 전 폼 상태 비교(preferenceFormKey) — 무변경 저장은 미전송(공백·장문 절단 오전송 방지),
+    // 500자 경계 밖 편집도 dirty로 정확히 감지된다(Codex P1 재검증 반영).
+    if (preferenceFormKey(fields, industries, freeText) !== loaded.preferenceKey) {
+      patch.preferenceText = composePreferenceText(fields, industries, freeText);
+    }
     if (sido !== loaded.sido) patch.addressSido = sido;
     if (sigungu.trim() !== loaded.sigungu) patch.addressSigungu = sigungu.trim() || null;
     if (Object.keys(patch).length === 0) {
@@ -186,8 +187,14 @@ export default function SettingsScreen() {
     setSaveError(false);
     try {
       const me = await updateMe(patch);
+      // 폼을 서버 정본으로 리싱크 — 저장 결과(500자 절단 등)를 그대로 보여줘야
+      // 다음 무변경 저장이 dirty로 오판되지 않는다
+      const parsed = parsePreferenceText(me.preference_text ?? "");
+      setFields(parsed.fields);
+      setIndustries(parsed.industries);
+      setFreeText(parsed.free);
       setLoaded({
-        preferenceText: canonicalPreference(me.preference_text),
+        preferenceKey: preferenceFormKey(parsed.fields, parsed.industries, parsed.free),
         sido: me.address_sido,
         sigungu: me.address_sigungu ?? "",
       });

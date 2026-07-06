@@ -14,7 +14,8 @@
 **Phase 2 코드 보완 — 16건 반영 (`src` 8파일 + index.css)**
 - 워크플로 `zisaze-fix`(코딩 opus·max → 3렌즈 리뷰 병렬 → P1 반영): recodex P2 5건 + 감사 신규 4건(CL-7 재시도 4곳, CL-5 토스트 cleanup, INT-6 절단 방어, 모달 ESC 포함) 수정.
 - 3렌즈 리뷰 P1 0·P2 3 → P2 3건 직접 수정: ①**홈만** keep-mounted(북마크·설정은 언마운트 유지 — 상세 토글 stale 방지) ②스크롤 캡처를 navigateToProgram의 **해시 변경 전**으로(커밋 후엔 0으로 클램프) ③모달 버튼 disabled→**aria-disabled**+가드(포커스 트랩 유지)+role="alert".
-- **recodex(Codex GPT-5.5 xhigh) 교차: P1 4건 전부 반영** — ①dirty 비교를 canonical(파싱→재합성 정규형)로 ②타임아웃 범위를 res.json()까지(fetchJson) ③복원을 **orderRef(로드 시점 순서)** 기준으로 — 6가지 도착 순서 전수 검산 OK ④Tab 트랩 모달 밖 포커스 회수. Codex P2 2건은 보류(비정규 해시 가드·렌더 중 ref — 실사용 미발생/무해 판단, 아래 "사용자 확인").
+- **recodex(Codex GPT-5.5 xhigh) 교차: P1 4건 전부 반영** — ①dirty 비교 개선 ②타임아웃 범위를 res.json()까지(fetchJson) ③복원을 **orderRef(로드 시점 순서)** 기준으로 — 6가지 도착 순서 전수 검산 OK ④Tab 트랩 모달 밖 포커스 회수. Codex P2 2건은 보류(비정규 해시 가드·렌더 중 ref — 실사용 미발생/무해 판단, 아래 "사용자 확인").
+- **Codex 재검증(2차)**: ②③④ 이상 없음(③은 Codex 자체 872조합 검산 PASS). ①의 canonical 방식에 신규 P1(500자 경계 밖만 편집 시 무변경 오판·미저장) → **preferenceFormKey(절단 전 폼 상태 비교) + 저장 성공 시 폼 서버 정본 리싱크**로 최종 반영. 시나리오 5종 검산 전부 통과.
 - 검증: `npx tsc -b`·`npx eslint .` EXIT 0(3회), 실브라우저 E2E — 온보딩→홈 추천(창업·경기 상위)→상세→back 시 **스크롤 정확 복원 실증**(1976→0→1976), keep-mounted로 복귀 시 API 재요청 없음, 삭제 모달 a11y 트리에 dialog+description+초기 포커스 반영, 삭제→새 사용자 재시작. 콘솔 에러 0.
 
 **Phase 3 심사 스크린샷 실캡처 — brand/console 4종 교체**
