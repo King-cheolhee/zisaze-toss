@@ -75,7 +75,9 @@ export async function resolveAnonymousKey(): Promise<string> {
     if (result === undefined) throw new Error("지원하지 않는 토스 앱 버전이에요. 토스 앱을 업데이트해 주세요.");
     throw new Error("사용자 키를 가져오지 못했어요. 잠시 후 다시 시도해 주세요.");
   } catch (e) {
-    if (import.meta.env.DEV && e instanceof BridgeTimeoutError) {
+    // 브릿지 부재는 즉시 throw("ReactNativeWebView is not available…") 또는 무응답(타임아웃)
+    // 두 형태로 나타난다 — 개발 환경에서는 둘 다 로컬 고정 키로 폴백.
+    if (import.meta.env.DEV) {
       let devKey = localStorage.getItem(DEV_KEY_STORAGE);
       if (!devKey) {
         const rand = Array.from(crypto.getRandomValues(new Uint8Array(12)), (b) =>
@@ -98,7 +100,7 @@ export async function openExternalURL(url: string): Promise<void> {
   try {
     await withTimeout(openURL(url), STORAGE_TIMEOUT_MS, "openURL");
   } catch (e) {
-    if (import.meta.env.DEV && e instanceof BridgeTimeoutError) {
+    if (import.meta.env.DEV) {
       window.open(url, "_blank", "noopener,noreferrer");
       return;
     }
