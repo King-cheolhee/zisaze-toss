@@ -34,3 +34,6 @@ Thumbs.db
 .claude/.review-*
 .claude/.recodex-*
 .recodex-count
+
+# granite 빌드 캐시
+.granite/

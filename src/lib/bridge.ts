@@ -88,7 +88,8 @@ export async function resolveAnonymousKey(): Promise<string> {
       }
       return devKey;
     }
-    if (e instanceof BridgeTimeoutError) {
+    // 타임아웃 또는 브릿지 부재("… not available …") 모두 사용자 문구로 변환
+    if (e instanceof BridgeTimeoutError || (e instanceof Error && /not available/i.test(e.message))) {
       throw new Error("토스 앱 안에서만 사용할 수 있어요.");
     }
     throw e;
