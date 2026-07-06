@@ -81,10 +81,11 @@ export async function ensureSession(): Promise<string> {
 export async function bootstrapSession(): Promise<{ identityChanged: boolean }> {
   const key = await resolveAnonymousKey();
   const storedKey = await kvGet(ANON_KEY);
-  const identityChanged = storedKey !== null && storedKey !== key;
-  // 키 기록이 없는 토큰은 소유자를 확인할 수 없으므로 폐기하고 현재 키로 재발급한다
-  // (recodex 2차: 기존 토큰을 새 계정 소유로 잘못 확정하는 문제 차단. 같은 키면 서버가 같은 사용자 반환 — 멱등).
-  if (identityChanged || storedKey === null) await clearSession();
+  // 키가 다르거나(계정 전환) 키 기록이 없으면(소유자 불명) 로컬 계정 상태를 신뢰할 수 없다 —
+  // 토큰을 폐기하고 현재 키로 재발급하며, 호출부(App)가 온보딩 플래그도 무효화하게 한다.
+  // 같은 키면 서버가 같은 사용자를 반환(멱등)하고, 기존 프로필이 있으면 App이 플래그를 복구한다.
+  const identityChanged = storedKey === null || storedKey !== key;
+  if (identityChanged) await clearSession();
   await ((await loadToken()) ?? issueSession(key));
   return { identityChanged };
 }
