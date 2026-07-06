@@ -40,12 +40,33 @@ export function useRoute(): Route {
   return useSyncExternalStore(subscribe, () => current);
 }
 
+// 현재 해시 경로(선행 # 제거). 최초 진입 시 ""는 홈 "/"과 같은 화면이므로 동치로 정규화한다.
+function currentPath(): string {
+  const p = location.hash.replace(/^#/, "");
+  return p === "" ? "/" : p;
+}
+
 export function navigate(path: "home" | "bookmarks" | "settings"): void {
-  location.hash = path === "home" ? "/" : `/${path}`;
+  const target = path === "home" ? "/" : `/${path}`;
+  // 활성 탭을 다시 눌러도 같은 해시 대입이 히스토리를 한 칸 쌓는 것 방지(뒤로가기 중복) — 현재와 같으면 no-op
+  if (currentPath() === target) return;
+  location.hash = target;
+}
+
+// 상세 진입 직전의 body 스크롤 스냅샷. hashchange 이후(리액트 커밋 뒤)에는 탭 트리가
+// hidden으로 접혀 window.scrollY가 0으로 클램프되므로, 해시를 바꾸기 전에 캡처해야 한다.
+// App이 상세→탭 복귀 시 이 값으로 복원한다(리뷰 P2: 저장 시점 보정).
+let scrollBeforeProgram = 0;
+
+export function getScrollBeforeProgram(): number {
+  return scrollBeforeProgram;
 }
 
 export function navigateToProgram(id: string): void {
-  location.hash = `/program/${encodeURIComponent(id)}`;
+  const target = `/program/${encodeURIComponent(id)}`;
+  if (currentPath() === target) return;
+  scrollBeforeProgram = window.scrollY;
+  location.hash = target;
 }
 
 export function goBack(): void {

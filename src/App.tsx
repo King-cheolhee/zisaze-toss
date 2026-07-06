@@ -1,8 +1,8 @@
-import { useCallback, useEffect, useState } from "react";
+import { useCallback, useEffect, useLayoutEffect, useRef, useState } from "react";
 import { bootstrapSession, fetchMe } from "./lib/api";
 import { kvGet, kvRemove, kvSet } from "./lib/bridge";
 import { ONBOARDED_KEY } from "./lib/constants";
-import { useRoute } from "./lib/router";
+import { getScrollBeforeProgram, useRoute } from "./lib/router";
 import BottomNav from "./components/BottomNav";
 import OnboardingScreen from "./screens/OnboardingScreen";
 import HomeScreen from "./screens/HomeScreen";
@@ -48,6 +48,27 @@ export default function App() {
     void bootstrap();
   }, [bootstrap]);
 
+  // 상세(program) 라우트에서도 탭 트리(홈/북마크/설정)를 언마운트하지 않고 hidden으로 유지해,
+  // 상세→뒤로 시 홈의 검색·필터·정렬·페이지·스크롤 상태가 그대로 보존되게 한다.
+  // (탭 간 전환 home↔bookmarks↔settings은 종전대로 조건 렌더=재마운트를 유지한다.)
+  const isProgram = route.name === "program";
+  const lastTabRef = useRef<"home" | "bookmarks" | "settings">("home");
+  if (route.name !== "program") lastTabRef.current = route.name;
+
+  // body 스크롤은 상세/탭 화면이 공유한다. 저장은 navigateToProgram()이 해시를 바꾸기 "전"에 해둔다
+  // — 이 effect 시점에는 탭 트리가 이미 hidden으로 접혀 scrollY가 0으로 클램프되기 때문(리뷰 P2).
+  // 복원은 keep-mounted라 콘텐츠 높이가 살아 있는 홈만 저장 위치로, 재마운트되는 탭은 맨 위로.
+  // (페인트 전에 복원해 깜빡임 방지 → useLayoutEffect)
+  const wasProgramRef = useRef(false);
+  useLayoutEffect(() => {
+    if (isProgram && !wasProgramRef.current) {
+      window.scrollTo(0, 0);
+    } else if (!isProgram && wasProgramRef.current) {
+      window.scrollTo(0, lastTabRef.current === "home" ? getScrollBeforeProgram() : 0);
+    }
+    wasProgramRef.current = isProgram;
+  }, [isProgram]);
+
   if (boot === "loading") {
     return (
       <div className="screen center-screen">
@@ -79,16 +100,18 @@ export default function App() {
     );
   }
 
-  if (route.name === "program") {
-    return <ProgramDetailScreen id={route.id} />;
-  }
-
+  const activeTab = lastTabRef.current;
   return (
     <>
-      {route.name === "home" && <HomeScreen />}
-      {route.name === "bookmarks" && <BookmarksScreen />}
-      {route.name === "settings" && <SettingsScreen />}
-      <BottomNav active={route.name} />
+      {/* 홈만 program 라우트에서도 언마운트하지 않고 hidden으로 유지(검색·필터·정렬·페이지·스크롤 보존).
+          북마크·설정은 종전대로 언마운트 — 상세에서 토글한 북마크가 복귀 시 재조회로 반영되게(리뷰 P2: stale 방지) */}
+      <div hidden={isProgram}>
+        {activeTab === "home" && <HomeScreen />}
+        {!isProgram && activeTab === "bookmarks" && <BookmarksScreen />}
+        {!isProgram && activeTab === "settings" && <SettingsScreen />}
+        <BottomNav active={activeTab} />
+      </div>
+      {route.name === "program" && <ProgramDetailScreen id={route.id} />}
     </>
   );
 }

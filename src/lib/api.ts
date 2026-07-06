@@ -28,6 +28,41 @@ export class ApiError extends Error {
   }
 }
 
+const FETCH_TIMEOUT_MS = 15000;
+
+// 모든 네트워크 요청에 타임아웃(Abort)을 건다. 구형 WebView 호환을 위해 AbortSignal.timeout 대신
+// AbortController를 직접 쓰고, 시간 초과로 우리가 중단(abort)한 경우에만 사용자 문구의 ApiError로 변환한다
+// (그 외 네트워크 오류는 그대로 전파 — 호출부가 에러 상태로 처리).
+// 타이머 범위는 헤더 수신(fetch resolve)만이 아니라 본문 파싱(res.json)까지다 —
+// 서버가 헤더만 보내고 본문을 멈추면 json()이 무기한 대기하기 때문(Codex P1). abort는 본문 읽기도 중단시킨다.
+async function fetchJson(
+  input: string,
+  init: RequestInit = {},
+): Promise<{ res: Response; data: unknown }> {
+  const controller = new AbortController();
+  let timedOut = false;
+  const timer = setTimeout(() => {
+    timedOut = true;
+    controller.abort();
+  }, FETCH_TIMEOUT_MS);
+  try {
+    const res = await fetch(input, { ...init, signal: controller.signal });
+    let data: unknown = null;
+    try {
+      data = await res.json();
+    } catch (e) {
+      if (timedOut) throw e; // abort로 끊긴 본문 → 아래에서 타임아웃 문구로 변환
+      data = null; // 비JSON 응답은 기존 규약대로 null
+    }
+    return { res, data };
+  } catch (e) {
+    if (timedOut) throw new ApiError(0, "네트워크가 불안정해요. 잠시 후 다시 시도해 주세요.");
+    throw e;
+  } finally {
+    clearTimeout(timer);
+  }
+}
+
 let tokenCache: string | null = null;
 let tokenLoaded = false;
 let issuing: Promise<string> | null = null;
@@ -45,12 +80,12 @@ function issueSession(knownKey?: string): Promise<string> {
   if (!issuing) {
     issuing = (async () => {
       const anonymousKey = knownKey ?? (await resolveAnonymousKey());
-      const res = await fetch(`${API_BASE}/api/toss/session`, {
+      const { res, data: raw } = await fetchJson(`${API_BASE}/api/toss/session`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ anonymousKey }),
       });
-      const data = (await res.json().catch(() => null)) as {
+      const data = raw as {
         success?: boolean;
         user?: SessionUser;
         token?: string;
@@ -109,7 +144,7 @@ async function apiFetch<T>(path: string, options: FetchOptions = {}): Promise<T>
     const headers: Record<string, string> = {};
     if (body !== undefined) headers["Content-Type"] = "application/json";
     if (token) headers["Authorization"] = `Bearer ${token}`;
-    return fetch(`${API_BASE}${path}`, {
+    return fetchJson(`${API_BASE}${path}`, {
       method,
       headers,
       body: body !== undefined ? JSON.stringify(body) : undefined,
@@ -117,18 +152,16 @@ async function apiFetch<T>(path: string, options: FetchOptions = {}): Promise<T>
   };
 
   let token = auth ? await ensureSession() : null;
-  let res = await doFetch(token);
+  let { res, data: raw } = await doFetch(token);
 
   // 401 → 세션 재발급 1회 재시도 (P2-2 규약. 토큰은 익명키로 언제든 재발급 가능)
   if (auth && res.status === 401) {
     await clearSession();
     token = await issueSession();
-    res = await doFetch(token);
+    ({ res, data: raw } = await doFetch(token));
   }
 
-  const data = (await res.json().catch(() => null)) as
-    | (T & { success?: boolean; error?: string })
-    | null;
+  const data = raw as (T & { success?: boolean; error?: string }) | null;
   if (!res.ok || data === null || data.success === false) {
     throw new ApiError(res.status, data?.error ?? `요청에 실패했어요. (${res.status})`);
   }

@@ -1,4 +1,4 @@
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { deleteMyData, fetchMe, updateMe } from "../lib/api";
 import type { MePatch } from "../lib/types";
 import { kvRemove, openExternalURL } from "../lib/bridge";
@@ -45,6 +45,14 @@ function toggle(list: string[], value: string): string[] {
   return list.includes(value) ? list.filter((v) => v !== value) : [...list, value];
 }
 
+// dirty 비교 기준 = 서버 원문을 파싱→재합성한 정규형(canonical).
+// 원문을 그대로(또는 앞 500자만 잘라) 비교하면 공백 차이·500자 초과 원문에서
+// 무변경 저장인데도 dirty로 오판해 정규화/절단본을 전송한다(Codex P1).
+function canonicalPreference(text: string | null | undefined): string {
+  const p = parsePreferenceText(text ?? "");
+  return composePreferenceText(p.fields, p.industries, p.free);
+}
+
 // P2-7 설정: 선호·지역 수정(온보딩 칩 UI 재사용, 현재값 프리로드), 데이터 삭제(H17), 법적 고지 링크
 export default function SettingsScreen() {
   const [state, setState] = useState<"loading" | "ready" | "error">("loading");
@@ -64,9 +72,21 @@ export default function SettingsScreen() {
   const [confirmOpen, setConfirmOpen] = useState(false);
   const [deleting, setDeleting] = useState(false);
   const [deleteError, setDeleteError] = useState(false);
+  const [reloadKey, setReloadKey] = useState(0);
+
+  // 저장 토스트 타이머(중복 저장 시 이전 타이머 정리, 언마운트 시 정리 — CL-5)
+  const toastTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  // 삭제 확인 모달 접근성용 참조: 트리거(포커스 복귀)·모달 첫/끝 버튼(초기 포커스·포커스 트랩)
+  const deleteTriggerRef = useRef<HTMLButtonElement>(null);
+  const modalCloseBtnRef = useRef<HTMLButtonElement>(null);
+  const modalDeleteBtnRef = useRef<HTMLButtonElement>(null);
+  // keydown 핸들러가 항상 최신 deleting을 읽도록(효과 재구독 없이) 참조로 미러링
+  const deletingRef = useRef(false);
+  deletingRef.current = deleting;
 
   useEffect(() => {
     let cancelled = false;
+    setState("loading"); // 재시도 시 스피너 표시
     (async () => {
       try {
         const me = await fetchMe();
@@ -78,7 +98,7 @@ export default function SettingsScreen() {
         setSido(me.address_sido);
         setSigungu(me.address_sigungu ?? "");
         setLoaded({
-          preferenceText: me.preference_text ?? "",
+          preferenceText: canonicalPreference(me.preference_text),
           sido: me.address_sido,
           sigungu: me.address_sigungu ?? "",
         });
@@ -90,18 +110,76 @@ export default function SettingsScreen() {
     return () => {
       cancelled = true;
     };
+  }, [reloadKey]);
+
+  // 저장 토스트 타이머는 언마운트 시 반드시 정리 (CL-5)
+  useEffect(() => {
+    return () => {
+      if (toastTimerRef.current) clearTimeout(toastTimerRef.current);
+    };
   }, []);
+
+  // 삭제 확인 모달 접근성: 열릴 때 첫 버튼 포커스, Escape 닫기(삭제 중 무시),
+  // Tab/Shift+Tab 두 버튼 간 순환(간단 트랩), 닫힐 때 트리거로 포커스 복귀
+  useEffect(() => {
+    if (!confirmOpen) return;
+    const trigger = deleteTriggerRef.current;
+    modalCloseBtnRef.current?.focus();
+
+    function onKeyDown(e: KeyboardEvent) {
+      if (e.key === "Escape") {
+        if (deletingRef.current) return; // 삭제 중에는 닫기 무시
+        e.preventDefault();
+        setConfirmOpen(false);
+        return;
+      }
+      if (e.key === "Tab") {
+        const first = modalCloseBtnRef.current;
+        const last = modalDeleteBtnRef.current;
+        if (!first || !last) return;
+        const active = document.activeElement;
+        // 포커스가 모달 밖(body·배경)으로 나갔으면 첫 버튼으로 회수 —
+        // aria-modal은 포커스를 물리적으로 가두지 않는다(Codex P1)
+        if (active !== first && active !== last) {
+          e.preventDefault();
+          first.focus();
+          return;
+        }
+        if (e.shiftKey && active === first) {
+          e.preventDefault();
+          last.focus();
+        } else if (!e.shiftKey && active === last) {
+          e.preventDefault();
+          first.focus();
+        }
+      }
+    }
+
+    document.addEventListener("keydown", onKeyDown);
+    return () => {
+      document.removeEventListener("keydown", onKeyDown);
+      trigger?.focus(); // 닫힐 때 트리거("내 데이터 삭제")로 포커스 복귀
+    };
+  }, [confirmOpen]);
+
+  // 저장 완료 토스트 표시(이전 타이머 정리 후 2초 뒤 숨김 — CL-5)
+  function showSavedToast() {
+    setSavedToast(true);
+    if (toastTimerRef.current) clearTimeout(toastTimerRef.current);
+    toastTimerRef.current = setTimeout(() => setSavedToast(false), 2000);
+  }
 
   async function save() {
     const nextText = composePreferenceText(fields, industries, freeText);
     const patch: MePatch = {};
-    // dirty 전송 규약: 실제 바뀐 필드만 보낸다 (서버도 preference_text 변경 여부를 재확인함)
+    // dirty 전송 규약: 실제 바뀐 필드만 보낸다 (서버도 preference_text 변경 여부를 재확인함).
+    // loaded.preferenceText는 canonical(파싱→재합성 정규형)이므로, 무변경 저장이면 nextText와
+    // 정확히 일치해 전송되지 않는다 — 공백 차이·500자 초과 원문의 절단 전송 방지(INT-6·Codex P1).
     if (nextText !== loaded.preferenceText) patch.preferenceText = nextText;
     if (sido !== loaded.sido) patch.addressSido = sido;
     if (sigungu.trim() !== loaded.sigungu) patch.addressSigungu = sigungu.trim() || null;
     if (Object.keys(patch).length === 0) {
-      setSavedToast(true);
-      setTimeout(() => setSavedToast(false), 2000);
+      showSavedToast();
       return;
     }
     setSaving(true);
@@ -109,12 +187,11 @@ export default function SettingsScreen() {
     try {
       const me = await updateMe(patch);
       setLoaded({
-        preferenceText: me.preference_text ?? "",
+        preferenceText: canonicalPreference(me.preference_text),
         sido: me.address_sido,
         sigungu: me.address_sigungu ?? "",
       });
-      setSavedToast(true);
-      setTimeout(() => setSavedToast(false), 2000);
+      showSavedToast();
     } catch {
       setSaveError(true);
     } finally {
@@ -123,6 +200,7 @@ export default function SettingsScreen() {
   }
 
   async function confirmDelete() {
+    if (deleting) return; // aria-disabled 전환(포커스 유지) 뒤 Enter 재입력 방지
     setDeleting(true);
     setDeleteError(false);
     try {
@@ -150,6 +228,13 @@ export default function SettingsScreen() {
     return (
       <div className="screen has-bottom-nav center-screen">
         <p className="error-text">설정 정보를 불러오지 못했어요. 잠시 후 다시 시도해 주세요.</p>
+        <button
+          type="button"
+          className="btn btn-secondary"
+          onClick={() => setReloadKey((k) => k + 1)}
+        >
+          다시 시도
+        </button>
       </div>
     );
   }
@@ -237,7 +322,11 @@ export default function SettingsScreen() {
       </section>
 
       <section className="section">
-        {saveError && <p className="error-text">저장에 실패했어요. 잠시 후 다시 시도해 주세요.</p>}
+        {saveError && (
+          <p className="error-text" role="alert">
+            저장에 실패했어요. 잠시 후 다시 시도해 주세요.
+          </p>
+        )}
         <button
           type="button"
           className="btn btn-primary btn-full"
@@ -268,33 +357,57 @@ export default function SettingsScreen() {
       </section>
 
       <section className="section">
-        <button type="button" className="link-btn link-danger" onClick={() => setConfirmOpen(true)}>
+        <button
+          type="button"
+          ref={deleteTriggerRef}
+          className="link-btn link-danger"
+          onClick={() => setConfirmOpen(true)}
+        >
           내 데이터 삭제
         </button>
       </section>
 
       {confirmOpen && (
-        <div className="modal-backdrop" role="dialog" aria-modal="true">
+        <div
+          className="modal-backdrop"
+          role="dialog"
+          aria-modal="true"
+          aria-labelledby="delete-modal-title"
+          aria-describedby="delete-modal-desc"
+        >
           <div className="modal">
-            <p className="modal-title">내 데이터를 삭제할까요?</p>
-            <p className="modal-desc">
+            <p className="modal-title" id="delete-modal-title">
+              내 데이터를 삭제할까요?
+            </p>
+            <p className="modal-desc" id="delete-modal-desc">
               선호 설정, 지역, 북마크가 모두 지워지고 되돌릴 수 없어요.
             </p>
-            {deleteError && <p className="error-text">삭제에 실패했어요. 잠시 후 다시 시도해 주세요.</p>}
+            {deleteError && (
+              <p className="error-text" role="alert">
+                삭제에 실패했어요. 잠시 후 다시 시도해 주세요.
+              </p>
+            )}
             <div className="modal-actions">
-              {/* H15: 다이얼로그 좌측 버튼은 '닫기' */}
+              {/* H15: 다이얼로그 좌측 버튼은 '닫기'.
+                  삭제 중에는 disabled 대신 aria-disabled — disabled는 포커스를 body로 튕겨
+                  포커스 트랩이 풀린다(리뷰 P2). 클릭·Enter는 핸들러 가드로 차단 */}
               <button
                 type="button"
+                ref={modalCloseBtnRef}
                 className="btn btn-ghost"
-                disabled={deleting}
-                onClick={() => setConfirmOpen(false)}
+                aria-disabled={deleting}
+                onClick={() => {
+                  if (deleting) return;
+                  setConfirmOpen(false);
+                }}
               >
                 닫기
               </button>
               <button
                 type="button"
+                ref={modalDeleteBtnRef}
                 className="btn btn-danger"
-                disabled={deleting}
+                aria-disabled={deleting}
                 onClick={() => void confirmDelete()}
               >
                 {deleting ? "삭제 중..." : "삭제하기"}

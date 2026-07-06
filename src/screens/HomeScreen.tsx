@@ -17,9 +17,13 @@ export default function HomeScreen() {
     "loading",
   );
   const [recoItems, setRecoItems] = useState<RecommendItem[]>([]);
+  const [recoReload, setRecoReload] = useState(0);
+  // 로드 시점의 추천 순서 — 낙관적 제거 실패 복원의 기준(도착 순서 무관 원위치)
+  const recoOrderRef = useRef<string[]>([]);
 
   useEffect(() => {
     let cancelled = false;
+    setRecoState("loading"); // 재시도 시 스켈레톤 표시
     (async () => {
       try {
         const me = await fetchMe();
@@ -30,6 +34,7 @@ export default function HomeScreen() {
         }
         const reco = await fetchRecommendations(1, RECO_COUNT);
         if (!cancelled) {
+          recoOrderRef.current = reco.data.map((r) => r.id);
           setRecoItems(reco.data);
           setRecoState("ready");
         }
@@ -40,11 +45,14 @@ export default function HomeScreen() {
     return () => {
       cancelled = true;
     };
-  }, []);
+  }, [recoReload]);
 
   function hideRecommendation(id: string) {
-    // 관심없음(P2-6 선택 기능): 낙관적 제거 후 서버 저장 실패 시 해당 항목만 원위치 복원
-    // (전체 배열 복원은 다른 연속 작업의 성공까지 되돌림 — recodex 2차)
+    // 관심없음(P2-6 선택 기능): 낙관적 제거 후 서버 저장 실패 시 원위치 복원.
+    // 제거 시점 화면의 앞이웃(anchor)만 기억하면 연속 제거에서 이미 사라진 이웃 정보가 빠져
+    // 도착 순서에 따라 뒤집히므로(Codex P1: [A,B,C]→B,C 제거→[A,C,B] 재현),
+    // "로드 시점의 전체 순서(recoOrderRef)"를 기준으로 나보다 앞이었던 항목 중
+    // 현재 배열에 남아 있는 가장 가까운 것 뒤에 삽입한다(도착 순서 무관).
     const idx = recoItems.findIndex((r) => r.id === id);
     if (idx < 0) return;
     const removed = recoItems[idx];
@@ -52,8 +60,18 @@ export default function HomeScreen() {
     void addHidden(id).catch(() =>
       setRecoItems((prev) => {
         if (prev.some((r) => r.id === id)) return prev;
+        const order = recoOrderRef.current;
+        const myPos = order.indexOf(id);
+        let insertAt = 0; // 원본 순서상 앞 항목이 하나도 안 남았으면 맨 앞
+        for (let i = myPos - 1; i >= 0; i--) {
+          const at = prev.findIndex((r) => r.id === order[i]);
+          if (at >= 0) {
+            insertAt = at + 1;
+            break;
+          }
+        }
         const next = [...prev];
-        next.splice(Math.min(idx, next.length), 0, removed);
+        next.splice(insertAt, 0, removed);
         return next;
       }),
     );
@@ -201,6 +219,13 @@ export default function HomeScreen() {
           {recoState === "error" && (
             <div className="cta-card">
               <p className="cta-desc">추천을 불러오지 못했어요. 잠시 후 다시 시도해 주세요.</p>
+              <button
+                type="button"
+                className="btn btn-secondary"
+                onClick={() => setRecoReload((k) => k + 1)}
+              >
+                다시 시도
+              </button>
             </div>
           )}
         </section>

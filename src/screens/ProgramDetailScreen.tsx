@@ -14,6 +14,7 @@ export default function ProgramDetailScreen({ id }: Props) {
   const [state, setState] = useState<"loading" | "ready" | "error">("loading");
   const [bookmarked, setBookmarked] = useState(false);
   const [bookmarkBusy, setBookmarkBusy] = useState(false);
+  const [reloadKey, setReloadKey] = useState(0);
   // 초기 상태 조회가 사용자의 토글보다 늦게 도착해 되돌리는 경쟁 방지 (recodex P1)
   const userToggled = useRef(false);
 
@@ -42,7 +43,7 @@ export default function ProgramDetailScreen({ id }: Props) {
     return () => {
       cancelled = true;
     };
-  }, [id]);
+  }, [id, reloadKey]);
 
   async function toggleBookmark() {
     if (bookmarkBusy) return;
@@ -72,6 +73,13 @@ export default function ProgramDetailScreen({ id }: Props) {
     return (
       <div className="screen center-screen">
         <p className="error-text">지원사업 정보를 불러오지 못했어요.</p>
+        <button
+          type="button"
+          className="btn btn-secondary"
+          onClick={() => setReloadKey((k) => k + 1)}
+        >
+          다시 시도
+        </button>
       </div>
     );
   }

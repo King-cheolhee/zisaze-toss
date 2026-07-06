@@ -48,6 +48,11 @@ input {
   font-family: inherit;
 }
 
+/* hidden 속성이 display 지정 요소에도 확실히 먹도록 — 상세↔탭 keep-mounted 토글용 */
+[hidden] {
+  display: none !important;
+}
+
 /* ── 레이아웃 ── */
 .screen {
   min-height: 100vh;
@@ -222,6 +227,13 @@ input {
 
 .btn:disabled {
   opacity: 0.4;
+}
+
+/* 삭제 진행 중 모달 버튼: disabled 대신 aria-disabled — 포커스를 유지해 트랩이 풀리지 않게.
+   클릭은 pointer-events로, Enter는 핸들러 가드로 차단 */
+.btn[aria-disabled="true"] {
+  opacity: 0.4;
+  pointer-events: none;
 }
 
 .btn-primary {
