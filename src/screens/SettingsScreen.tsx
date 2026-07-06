@@ -127,13 +127,15 @@ export default function SettingsScreen() {
     setDeleteError(false);
     try {
       await deleteMyData();
-      await kvRemove(ONBOARDED_KEY);
-      location.hash = "/";
-      location.reload(); // 새 사용자로 재시작 (재진입 시 새 세션 발급)
     } catch {
       setDeleteError(true);
       setDeleting(false);
+      return;
     }
+    // 서버 삭제는 이미 성공 — 로컬 정리는 실패해도 '삭제 실패'로 표시하지 않는다 (recodex P1)
+    await kvRemove(ONBOARDED_KEY);
+    location.hash = "/";
+    location.reload(); // 새 사용자로 재시작 (재진입 시 새 세션 발급)
   }
 
   if (state === "loading") {
@@ -167,6 +169,7 @@ export default function SettingsScreen() {
               key={chip}
               type="button"
               className={`chip ${fields.includes(chip) ? "chip-selected" : ""}`}
+              disabled={saving}
               onClick={() => setFields((prev) => toggle(prev, chip))}
             >
               {chip}
@@ -180,6 +183,7 @@ export default function SettingsScreen() {
               key={chip}
               type="button"
               className={`chip ${industries.includes(chip) ? "chip-selected" : ""}`}
+              disabled={saving}
               onClick={() => setIndustries((prev) => toggle(prev, chip))}
             >
               {chip}
@@ -193,6 +197,7 @@ export default function SettingsScreen() {
           maxLength={100}
           placeholder="예: 청년창업, 스마트공장 구축"
           value={freeText}
+          disabled={saving}
           onChange={(e) => setFreeText(e.target.value)}
         />
         {/* H16: 생성형 AI 사용 고지 */}
@@ -207,7 +212,12 @@ export default function SettingsScreen() {
               key={s}
               type="button"
               className={`chip ${sido === s ? "chip-selected" : ""}`}
-              onClick={() => setSido((prev) => (prev === s ? null : s))}
+              disabled={saving}
+              onClick={() => {
+                const next = sido === s ? null : s;
+                if (next !== sido) setSigungu(""); // 시/도가 바뀌면 이전 시/군/구는 무효 (recodex P1)
+                setSido(next);
+              }}
             >
               {s}
             </button>
@@ -220,6 +230,7 @@ export default function SettingsScreen() {
           maxLength={20}
           placeholder="예: 성남시"
           value={sigungu}
+          disabled={saving}
           onChange={(e) => setSigungu(e.target.value)}
         />
         <p className="section-hint">시/군/구까지 알려주시면 우리 동네 지원사업 추천이 더 정확해져요.</p>

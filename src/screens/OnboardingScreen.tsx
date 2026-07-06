@@ -145,6 +145,7 @@ export default function OnboardingScreen({ onDone }: Props) {
               key={s}
               type="button"
               className={`chip ${sido === s ? "chip-selected" : ""}`}
+              disabled={saving}
               onClick={() => setSido((prev) => (prev === s ? null : s))}
             >
               {s}

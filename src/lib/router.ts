@@ -12,7 +12,14 @@ export type Route =
 
 function parseHash(): Route {
   const seg = location.hash.replace(/^#\/?/, "").split("/").filter(Boolean);
-  if (seg[0] === "program" && seg[1]) return { name: "program", id: decodeURIComponent(seg[1]) };
+  if (seg[0] === "program" && seg[1]) {
+    // 잘못된 퍼센트 인코딩(%E0%A 등)이 decodeURIComponent에서 던지면 홈으로 폴백
+    try {
+      return { name: "program", id: decodeURIComponent(seg[1]) };
+    } catch {
+      return { name: "home" };
+    }
+  }
   if (seg[0] === "bookmarks") return { name: "bookmarks" };
   if (seg[0] === "settings") return { name: "settings" };
   return { name: "home" };

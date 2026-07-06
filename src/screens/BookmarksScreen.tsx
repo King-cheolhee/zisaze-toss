@@ -31,10 +31,10 @@ export default function BookmarksScreen() {
   }, [sort]);
 
   function remove(id: string) {
+    // 낙관적 제거 후 서버 실패 시 복원 (recodex P1)
+    const before = items;
     setItems((prev) => prev.filter((b) => b.id !== id));
-    void removeBookmark(id).catch(() => {
-      // 실패해도 다음 로드에서 서버 상태로 복원됨
-    });
+    void removeBookmark(id).catch(() => setItems(before));
   }
 
   return (

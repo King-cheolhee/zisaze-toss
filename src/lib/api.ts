@@ -17,6 +17,7 @@ const API_BASE: string =
   (import.meta.env.DEV ? "" : "https://www.zisaze.com");
 
 const TOKEN_KEY = "zisaze.token";
+const ANON_KEY = "zisaze.anonymousKey";
 
 export class ApiError extends Error {
   status: number;
@@ -40,10 +41,10 @@ async function loadToken(): Promise<string | null> {
 }
 
 // 익명키 → JWT 발급(P1-3). 동시 401이 몰려도 발급은 1회만(in-flight 공유).
-function issueSession(): Promise<string> {
+function issueSession(knownKey?: string): Promise<string> {
   if (!issuing) {
     issuing = (async () => {
-      const anonymousKey = await resolveAnonymousKey();
+      const anonymousKey = knownKey ?? (await resolveAnonymousKey());
       const res = await fetch(`${API_BASE}/api/toss/session`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
@@ -61,6 +62,7 @@ function issueSession(): Promise<string> {
       tokenCache = data.token;
       tokenLoaded = true;
       await kvSet(TOKEN_KEY, data.token);
+      await kvSet(ANON_KEY, anonymousKey); // 토큰이 어떤 익명키로 발급됐는지 기록(계정 전환 감지용)
       return data.token;
     })().finally(() => {
       issuing = null;
@@ -71,6 +73,19 @@ function issueSession(): Promise<string> {
 
 export async function ensureSession(): Promise<string> {
   return (await loadToken()) ?? issueSession();
+}
+
+// 앱 부트 전용: 현재 토스 익명키가 저장된 토큰의 주인과 같은지 확인한다.
+// 다르면(토스 계정 전환·기기 이전 등) 이전 사용자 토큰을 파기하고 새 세션을 발급한다
+// (recodex P1: 저장 토큰이 다른 사용자의 프로필·북마크에 접근하는 문제 차단).
+export async function bootstrapSession(): Promise<{ identityChanged: boolean }> {
+  const key = await resolveAnonymousKey();
+  const storedKey = await kvGet(ANON_KEY);
+  const identityChanged = storedKey !== null && storedKey !== key;
+  if (identityChanged) await clearSession();
+  else if (storedKey === null) await kvSet(ANON_KEY, key); // 기존 설치도 다음 부트부터 감지 가능하게 기록
+  await ((await loadToken()) ?? issueSession(key));
+  return { identityChanged };
 }
 
 export async function clearSession(): Promise<void> {

@@ -43,11 +43,10 @@ export default function HomeScreen() {
   }, []);
 
   function hideRecommendation(id: string) {
-    // 관심없음(P2-6 선택 기능): 서버 저장 후 목록에서 즉시 제거(다음 추천부터 서버가 제외)
+    // 관심없음(P2-6 선택 기능): 낙관적 제거 후 서버 저장 실패 시 복원 (recodex P1)
+    const before = recoItems;
     setRecoItems((prev) => prev.filter((r) => r.id !== id));
-    void addHidden(id).catch(() => {
-      // 실패해도 치명적이지 않음 — 다음 로드에서 다시 노출됨
-    });
+    void addHidden(id).catch(() => setRecoItems(before));
   }
 
   // ── 전체 목록 ──
@@ -80,7 +79,11 @@ export default function HomeScreen() {
         setPage(res.pagination.page);
         setTotalPages(res.pagination.totalPages);
       } catch {
-        if (seq === requestSeq.current) setListError(true);
+        if (seq === requestSeq.current) {
+          setListError(true);
+          // 새 조건(검색·필터) 요청이 실패했는데 이전 조건의 목록이 새 제목 아래 남는 것 방지
+          if (!append) setPrograms([]);
+        }
       } finally {
         if (seq === requestSeq.current) setListLoading(false);
       }

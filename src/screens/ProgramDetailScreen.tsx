@@ -1,4 +1,4 @@
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { addBookmark, fetchBookmarkIds, fetchProgram, removeBookmark } from "../lib/api";
 import type { ProgramFull } from "../lib/types";
 import { openExternalURL } from "../lib/bridge";
@@ -14,6 +14,8 @@ export default function ProgramDetailScreen({ id }: Props) {
   const [state, setState] = useState<"loading" | "ready" | "error">("loading");
   const [bookmarked, setBookmarked] = useState(false);
   const [bookmarkBusy, setBookmarkBusy] = useState(false);
+  // 초기 상태 조회가 사용자의 토글보다 늦게 도착해 되돌리는 경쟁 방지 (recodex P1)
+  const userToggled = useRef(false);
 
   useEffect(() => {
     let cancelled = false;
@@ -28,10 +30,11 @@ export default function ProgramDetailScreen({ id }: Props) {
         if (!cancelled) setState("error");
       }
     })();
+    userToggled.current = false;
     (async () => {
       try {
         const ids = await fetchBookmarkIds();
-        if (!cancelled) setBookmarked(ids.includes(id));
+        if (!cancelled && !userToggled.current) setBookmarked(ids.includes(id));
       } catch {
         // 북마크 상태 조회 실패는 무시(토글 시 서버가 정본)
       }
@@ -43,6 +46,7 @@ export default function ProgramDetailScreen({ id }: Props) {
 
   async function toggleBookmark() {
     if (bookmarkBusy) return;
+    userToggled.current = true;
     setBookmarkBusy(true);
     const next = !bookmarked;
     setBookmarked(next);

@@ -32,34 +32,52 @@ const KEY_TIMEOUT_MS = 5000;
 
 // 네이티브 Storage 우선, 브릿지 부재 시 localStorage 폴백.
 // 폴백 여부를 한 번 판정하면 캐시해 이후 호출은 타임아웃 대기 없이 즉시 처리.
+// 단, 판정과 무관하게 "이번 호출"이 실패하면 반드시 localStorage로 폴백한다
+// (recodex P1: 한 번 성공 후 실패하면 쓰기·삭제가 조용히 유실되던 문제).
 let nativeStorageAvailable: boolean | null = null;
 
-async function tryNative<T>(op: () => Promise<T>): Promise<T | undefined> {
-  if (nativeStorageAvailable === false) return undefined;
+async function tryNative<T>(op: () => Promise<T>): Promise<{ ok: true; value: T } | { ok: false }> {
+  if (nativeStorageAvailable === false) return { ok: false };
   try {
-    const result = await withTimeout(op(), STORAGE_TIMEOUT_MS, "Storage");
+    const value = await withTimeout(op(), STORAGE_TIMEOUT_MS, "Storage");
     nativeStorageAvailable = true;
-    return result;
+    return { ok: true, value };
   } catch {
     if (nativeStorageAvailable === null) nativeStorageAvailable = false;
-    return undefined;
+    return { ok: false };
   }
 }
 
 export async function kvGet(key: string): Promise<string | null> {
-  const v = await tryNative(() => Storage.getItem(key));
-  if (nativeStorageAvailable) return (v as string | null) ?? null;
-  return localStorage.getItem(key);
+  const r = await tryNative(() => Storage.getItem(key));
+  if (r.ok) return (r.value as string | null) ?? null;
+  try {
+    return localStorage.getItem(key);
+  } catch {
+    return null;
+  }
 }
 
 export async function kvSet(key: string, value: string): Promise<void> {
-  await tryNative(() => Storage.setItem(key, value));
-  if (!nativeStorageAvailable) localStorage.setItem(key, value);
+  const r = await tryNative(() => Storage.setItem(key, value));
+  if (!r.ok) {
+    try {
+      localStorage.setItem(key, value);
+    } catch {
+      // 저장 실패는 치명적이지 않음 — 토큰은 익명키로 재발급 가능
+    }
+  }
 }
 
 export async function kvRemove(key: string): Promise<void> {
-  await tryNative(() => Storage.removeItem(key));
-  if (!nativeStorageAvailable) localStorage.removeItem(key);
+  const r = await tryNative(() => Storage.removeItem(key));
+  if (!r.ok) {
+    try {
+      localStorage.removeItem(key);
+    } catch {
+      // 무시
+    }
+  }
 }
 
 // 익명 식별키. 토스 앱 안: getAnonymousKey() 실값(샌드박스는 mock).
@@ -97,14 +115,21 @@ export async function resolveAnonymousKey(): Promise<string> {
 }
 
 // 외부 URL 열기(H11): 토스 앱 안에서는 반드시 openURL. 브라우저 개발 폴백만 window.open.
+// 보안(recodex P1): 서버 제공 URL이라도 http(s) 외 스킴(javascript:, intent: 등)은 실행하지 않는다.
 export async function openExternalURL(url: string): Promise<void> {
+  let parsed: URL;
   try {
-    await withTimeout(openURL(url), STORAGE_TIMEOUT_MS, "openURL");
-  } catch (e) {
+    parsed = new URL(url);
+  } catch {
+    return;
+  }
+  if (parsed.protocol !== "https:" && parsed.protocol !== "http:") return;
+  try {
+    await withTimeout(openURL(url), KEY_TIMEOUT_MS, "openURL");
+  } catch {
     if (import.meta.env.DEV) {
       window.open(url, "_blank", "noopener,noreferrer");
-      return;
     }
-    throw e;
+    // 프로덕션 브릿지 실패는 무시(재탭 가능) — throw하면 호출부 void로 미처리 거부가 됨
   }
 }
